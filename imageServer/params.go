@@ -18,13 +18,12 @@ type imageParams struct {
 
 type batchParams struct {
 	URL string `json:"url"`
-	operations []operations
+	Operations []Operation `json:"operations"`
 }
 
-type operations struct {
-	filename string `json:"filename"`
-	rawParams string `json:"operation"`
-	params imageParams
+type Operation struct {
+	Filename string `json:"filename"`
+	RawParams string `json:"operation"`
 }
 
 func (p imageParams) getImageType() bimg.ImageType {

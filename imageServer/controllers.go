@@ -52,20 +52,18 @@ func (r *batchController) batch() gin.HandlerFunc {
 		//apiKey := c.Param("apiKey")
 		var batchParams batchParams
 		c.BindJSON(&batchParams)
-		//TODO parse raw parameters to imageParameters
-		fmt.Printf("URL to IMAGE: %v\n", batchParams.URL)
-		//validationError := validateParams(p, image)
-		//if validationError != nil {
-		//	handleError(c, validationError)
-		//	return
-		//}
-		//
-		//img, err := resize(image.Contents, p)
-		//if err != nil {
-		//	handleError(c, err)
-		//	return
-		//}
-		var data []byte
-		c.Data(http.StatusOK, "string", data)
+
+		image, err := downloadImage(batchParams.URL)
+		if err != nil {
+			handleError(c, err)
+			return
+		}
+
+		for _, operation := range batchParams.Operations {
+			//TODO parse operation param and do the operation
+			fmt.Printf("Operation raw params: %v\n", operation.RawParams)
+		}
+		//TODO create and return zip file
+		c.Data(http.StatusOK, "string", image.Contents)
 	}
 }
