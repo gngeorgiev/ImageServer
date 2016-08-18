@@ -16,6 +16,17 @@ type imageParams struct {
 	Mime          string
 }
 
+type batchParams struct {
+	URL string `json:"url"`
+	operations []operations
+}
+
+type operations struct {
+	filename string `json:"filename"`
+	rawParams string `json:"operation"`
+	params imageParams
+}
+
 func (p imageParams) getImageType() bimg.ImageType {
 	if p.Mime == "image/jpeg" || p.Mime == "image/jpg" {
 		return bimg.JPEG

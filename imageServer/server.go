@@ -25,12 +25,15 @@ func Run() {
 	r := gin.Default()
 
 	rController := &resizeController{}
+	bController := &batchController{}
 
 	v1 := r.Group("/v1")
 	{
 		apiKey := v1.Group("/:apiKey")
 		{
 			apiKey.GET("/:params/*url", rController.resize())
+			apiKey.POST("/batch", bController.batch())
+
 		}
 	}
 
