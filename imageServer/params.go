@@ -18,12 +18,17 @@ type imageParams struct {
 
 type batchParams struct {
 	URL string `json:"url"`
-	Operations []Operation `json:"operations"`
+	Operations []BatchOperation `json:"operations"`
 }
 
-type Operation struct {
+type BatchOperation struct {
 	Filename string `json:"filename"`
-	RawParams string `json:"operation"`
+	RawOperationParams string `json:"operation"`
+}
+
+type BatchOperationParams struct {
+	Operation string
+	ImageParams imageParams
 }
 
 func (p imageParams) getImageType() bimg.ImageType {
@@ -58,11 +63,10 @@ func (p imageParams) toBimgOptions() bimg.Options {
 	}
 }
 
-func parseParams(params string, img image) (imageParams, error) {
-	splitQuery := strings.Split(params, "=")[1]
-	splitParams := strings.Split(splitQuery, ",")
+//Modded to reuse in batch operation parsing
+func parseParams(params []string, img image) (imageParams, error) {
 	p := &imageParams{}
-	for _, s := range splitParams {
+	for _, s := range params {
 		options := strings.Split(s, ":")
 		key := options[0]
 		value := options[1]
@@ -132,6 +136,20 @@ func parseParams(params string, img image) (imageParams, error) {
 	}
 
 	return *p, nil
+}
+
+func parseBatchOperationParams(rawOperationParams string, img image) (BatchOperationParams, error) {
+	bp := &BatchOperationParams{}
+
+	splitQuery := strings.Split(rawOperationParams, "=")
+	bp.Operation = splitQuery[0]
+	splitParams := strings.Split(splitQuery[1], ",")
+	p, err := parseParams(splitParams, img)
+	if err != nil {
+		return *bp, err
+	}
+	bp.ImageParams = p
+	return *bp, nil
 }
 
 func validateParams(p imageParams, img image) error {

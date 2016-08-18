@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"fmt"
+	"strings"
 )
 
 type resizeController struct {
@@ -22,7 +22,10 @@ func (r *resizeController) resize() gin.HandlerFunc {
 			return
 		}
 
-		p, err := parseParams(params, image)
+		//Modded to reuse in batch operation parsing
+		splitQuery := strings.Split(params, "=")[1]
+		splitParams := strings.Split(splitQuery, ",")
+		p, err := parseParams(splitParams, image)
 		if err != nil {
 			handleError(c, err)
 			return
@@ -60,8 +63,16 @@ func (r *batchController) batch() gin.HandlerFunc {
 		}
 
 		for _, operation := range batchParams.Operations {
-			//TODO parse operation param and do the operation
-			fmt.Printf("Operation raw params: %v\n", operation.RawParams)
+			bp, err := parseBatchOperationParams(operation.RawOperationParams, image)
+
+			//TODO put the image in a zip file
+			//TODO use the command specified in the operation
+			_, err = resize(image.Contents, bp.ImageParams)
+			if err != nil {
+				handleError(c, err)
+				return
+			}
+
 		}
 		//TODO create and return zip file
 		c.Data(http.StatusOK, "string", image.Contents)
