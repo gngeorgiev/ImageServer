@@ -5,6 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"strings"
+	"bytes"
+	"archive/zip"
+	"log"
 )
 
 type resizeController struct {
@@ -62,19 +65,32 @@ func (r *batchController) batch() gin.HandlerFunc {
 			return
 		}
 
+		buf := new(bytes.Buffer)
+		w := zip.NewWriter(buf)
 		for _, operation := range batchParams.Operations {
 			bp, err := parseBatchOperationParams(operation.RawOperationParams, image)
 
-			//TODO put the image in a zip file
-			//TODO use the command specified in the operation
-			_, err = resize(image.Contents, bp.ImageParams)
+			img, err := resize(image.Contents, bp.ImageParams)
 			if err != nil {
 				handleError(c, err)
 				return
 			}
 
+			f, err := w.Create(operation.Filename)
+			if err != nil {
+				log.Fatal(err)
+			}
+			_, err = f.Write(img.Contents)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+		}
+		err = w.Close()
+		if err != nil {
+			handleError(c, err)
 		}
 		//TODO create and return zip file
-		c.Data(http.StatusOK, "string", image.Contents)
+		c.Data(http.StatusOK, "application/zip", buf.Bytes())
 	}
 }
