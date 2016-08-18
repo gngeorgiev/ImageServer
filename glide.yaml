@@ -1,0 +1,4 @@
+package: github.com/gngeorgiev/ImageServer
+import:
+- package: github.com/gin-gonic/gin
+- package: gopkg.in/h2non/bimg.v1
