@@ -6,7 +6,7 @@ import (
 	"gopkg.in/h2non/bimg.v1"
 )
 
-func resize(buffer []byte, params ImageParams) (image, error) {
+func resize(buffer []byte, params imageParams) (image, error) {
 	//todo: validate etc
 
 	img := &image{}
