@@ -15,7 +15,7 @@ func (r *resizeController) resize() gin.HandlerFunc {
 		params := c.Param("params")
 		url := c.Param("url")[1:]
 
-		b, err := downloadImage(url)
+		image, err := downloadImage(url)
 		if err != nil {
 			handleError(c, err)
 			return
@@ -27,12 +27,12 @@ func (r *resizeController) resize() gin.HandlerFunc {
 			return
 		}
 
-		img, err := resize(b, p)
+		img, err := resize(image.Contents, p)
 		if err != nil {
 			handleError(c, err)
 			return
 		}
 
-		c.Data(http.StatusOK, "image/png", img)
+		c.Data(http.StatusOK, img.Mime, img.Contents)
 	}
 }
