@@ -57,20 +57,24 @@ func downloadImage(url string) ([]byte, error) {
 }
 
 func parseParams(params string) (ImageParams, error) {
-	split := strings.Split(params, "=")
+	splitQuery := strings.Split(params, "=")[1]
+	splitParams := strings.Split(splitQuery, ",")
 	p := &ImageParams{}
-	for _, s := range split {
-		if s == "w" {
-			w, err := strconv.Atoi(s)
+	for _, s := range splitParams {
+		options := strings.Split(s, ":")
+		key := options[0]
+		value := options[1]
+		if key == "w" {
+			w, err := strconv.Atoi(value)
 			if err != nil {
-				return *p, errors.New(fmt.Sprintf("Invalid width value: %s", s))
+				return *p, errors.New(fmt.Sprintf("Invalid width value: %s", value))
 			}
 
 			p.Width = w
-		} else if s == "h" {
-			h, err := strconv.Atoi(s)
+		} else if key == "h" {
+			h, err := strconv.Atoi(value)
 			if err != nil {
-				return *p, errors.New(fmt.Sprintf("Invalid height value: %s", s))
+				return *p, errors.New(fmt.Sprintf("Invalid height value: %s", value))
 			}
 
 			p.Height = h
