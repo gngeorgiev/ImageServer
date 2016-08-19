@@ -55,65 +55,68 @@ func (r *resizeController) resize() gin.HandlerFunc {
 type batchController struct {
 }
 
-func (r *batchController) batch() gin.HandlerFunc {
+func (r *batchController) batch(workQueue chan resizeRequest) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//apiKey := c.Param("apiKey")
 		var batchParams batchParams
 		c.BindJSON(&batchParams)
 
-		image, err := downloadImage(batchParams.URL)
+		im, err := downloadImage(batchParams.URL)
 		if err != nil {
 			handleError(c, err)
 			return
 		}
 
-		wg := sync.WaitGroup{}
-
 		mu := &sync.Mutex{}
-
 		buf := new(bytes.Buffer)
 		w := zip.NewWriter(buf)
 		defer w.Close()
 
+		outChan := make(chan resizeRequestResult)
+		defer close(outChan)
+
+		numOfOps := len(batchParams.Operations)
+		log.Print(numOfOps)
 		errors := make([]error, 0)
+
 		for _, operation := range batchParams.Operations {
-			wg.Add(1)
-			go func(operation BatchOperation) {
-				defer wg.Done()
-
-				bp, err := parseBatchOperationParams(operation.RawOperationParams, image)
-				if err != nil {
-					errors = append(errors, err)
-					return
-				}
-
-				img, err := resize(image.Contents, bp.ImageParams)
-				if err != nil {
-					errors = append(errors, err)
-					return
-				}
-
-				mu.Lock()
-				defer mu.Unlock()
-				f, err := w.Create(operation.Filename)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				_, err = f.Write(img.Contents)
-				if err != nil {
-					log.Fatal(err)
-				}
-			}(operation)
+			bp, err := parseBatchOperationParams(operation.RawOperationParams, im)
+			if err != nil {
+				errors = append(errors, err)
+			}
+			rR := resizeRequest{
+				im,
+				bp.ImageParams,
+				outChan,
+				operation,
+			}
+			workQueue <- rR
 		}
 
-		wg.Wait()
+		resultCount := 0
+		for resizedRequest := range outChan {
+			resultCount++
+			log.Print(resultCount)
+			mu.Lock()
+			f, err := w.Create(resizedRequest.batchOperation.Filename)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			_, err = f.Write(resizedRequest.image.Contents)
+			if err != nil {
+				log.Fatal(err)
+			}
+			mu.Unlock()
+			if resultCount >= numOfOps {
+				return
+			}
+		}
 
 		if len(errors) > 0 {
 			handleErrors(c, errors)
 			return
 		}
-
 		c.Data(http.StatusOK, "application/zip", buf.Bytes())
 	}
 }

@@ -37,6 +37,10 @@ func handleError(c *gin.Context, err error, status ...int) {
 }
 
 func Run() {
+	workQueueChan := make(chan resizeRequest, 1000)
+	wp := new(WorkerPool)
+	wp.Run(3, workQueueChan)
+
 	r := gin.Default()
 
 	rController := &resizeController{}
@@ -47,7 +51,7 @@ func Run() {
 		apiKey := v1.Group("/:apiKey")
 		{
 			apiKey.GET("/:params/*url", rController.resize())
-			apiKey.POST("/batch", bController.batch())
+			apiKey.POST("/batch", bController.batch(workQueueChan))
 
 		}
 	}
