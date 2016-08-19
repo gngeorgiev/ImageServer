@@ -3,11 +3,13 @@ package imageServer
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
-	"strings"
-	"bytes"
 	"archive/zip"
+	"bytes"
 	"log"
+	"strings"
+	"sync"
+
+	"github.com/gin-gonic/gin"
 )
 
 type resizeController struct {
@@ -65,32 +67,53 @@ func (r *batchController) batch() gin.HandlerFunc {
 			return
 		}
 
+		wg := sync.WaitGroup{}
+
+		mu := &sync.Mutex{}
+
 		buf := new(bytes.Buffer)
 		w := zip.NewWriter(buf)
+		defer w.Close()
+
+		errors := make([]error, 0)
 		for _, operation := range batchParams.Operations {
-			bp, err := parseBatchOperationParams(operation.RawOperationParams, image)
+			wg.Add(1)
+			go func(operation BatchOperation) {
+				defer wg.Done()
 
-			img, err := resize(image.Contents, bp.ImageParams)
-			if err != nil {
-				handleError(c, err)
-				return
-			}
+				bp, err := parseBatchOperationParams(operation.RawOperationParams, image)
+				if err != nil {
+					errors = append(errors, err)
+					return
+				}
 
-			f, err := w.Create(operation.Filename)
-			if err != nil {
-				log.Fatal(err)
-			}
-			_, err = f.Write(img.Contents)
-			if err != nil {
-				log.Fatal(err)
-			}
+				img, err := resize(image.Contents, bp.ImageParams)
+				if err != nil {
+					errors = append(errors, err)
+					return
+				}
 
+				mu.Lock()
+				defer mu.Unlock()
+				f, err := w.Create(operation.Filename)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				_, err = f.Write(img.Contents)
+				if err != nil {
+					log.Fatal(err)
+				}
+			}(operation)
 		}
-		err = w.Close()
-		if err != nil {
-			handleError(c, err)
+
+		wg.Wait()
+
+		if len(errors) > 0 {
+			handleErrors(c, errors)
+			return
 		}
-		//TODO create and return zip file
+
 		c.Data(http.StatusOK, "application/zip", buf.Bytes())
 	}
 }

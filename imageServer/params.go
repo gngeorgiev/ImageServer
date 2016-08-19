@@ -17,17 +17,17 @@ type imageParams struct {
 }
 
 type batchParams struct {
-	URL string `json:"url"`
+	URL        string           `json:"url"`
 	Operations []BatchOperation `json:"operations"`
 }
 
 type BatchOperation struct {
-	Filename string `json:"filename"`
+	Filename           string `json:"filename"`
 	RawOperationParams string `json:"operation"`
 }
 
 type BatchOperationParams struct {
-	Operation string
+	Operation   string
 	ImageParams imageParams
 }
 
