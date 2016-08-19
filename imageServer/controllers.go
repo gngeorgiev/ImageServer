@@ -43,6 +43,7 @@ func (r *resizeController) resize() gin.HandlerFunc {
 		}
 
 		ch := make(chan ResizeResult)
+		defer close(ch)
 		go resize(image.Contents, p, ch)
 		result := <-ch
 
@@ -78,6 +79,7 @@ func (r *batchController) batch() gin.HandlerFunc {
 		resultChannels := make([]chan ResizeResult, 0)
 		for _, operation := range batchParams.Operations {
 			ch := make(chan ResizeResult)
+			defer close(ch)
 			resultChannels = append(resultChannels, ch)
 			bp, err := parseBatchOperationParams(operation.RawOperationParams, image)
 			if err != nil {
