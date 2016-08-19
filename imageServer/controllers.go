@@ -99,7 +99,7 @@ func (r *batchController) batch() gin.HandlerFunc {
 			}
 
 			operation := batchParams.Operations[i]
-			f, err := w.Create(operation.Filename)
+			f, err := w.Create(operation.Filename) //TODO: operation and channel might not be from the same index!! bug!
 			if err != nil {
 				log.Fatal(err)
 			}
