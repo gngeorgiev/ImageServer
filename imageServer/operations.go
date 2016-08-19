@@ -8,24 +8,22 @@ type ResizeResult struct {
 }
 
 func resize(buffer []byte, params ImageParams, doneChan chan ResizeResult) {
-	select {
-	case workerId := <-workers:
-		res := &ResizeResult{}
+	workerId := <-workers
+	res := &ResizeResult{}
 
-		opts := params.toBimgOptions()
-		b, err := bimg.Resize(buffer, opts)
-		if err != nil {
-			res.Error = err
-		}
-
-		newImg, err := NewImage(b)
-		if err != nil {
-			res.Error = err
-		}
-
-		res.Image = newImg
-
-		workers <- workerId
-		doneChan <- *res
+	opts := params.toBimgOptions()
+	b, err := bimg.Resize(buffer, opts)
+	if err != nil {
+		res.Error = err
 	}
+
+	newImg, err := NewImage(b)
+	if err != nil {
+		res.Error = err
+	}
+
+	res.Image = newImg
+
+	workers <- workerId
+	doneChan <- *res
 }
