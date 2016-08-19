@@ -6,14 +6,27 @@ import (
 	"strconv"
 	"strings"
 
+	"math"
+
+	"log"
+
 	"gopkg.in/h2non/bimg.v1"
 )
+
+const (
+	FillContain = FillType("contain")
+	FillCover   = FillType("cover")
+	FillNone    = FillType("")
+)
+
+type FillType string
 
 type ImageParams struct {
 	Width, Height ImageDimension
 	Image         Image
 	PixelDensity  float64
 	Upscale       *bool //using a pointer here allows us to check for nil
+	Fill          FillType
 }
 
 type ImageDimension struct {
@@ -54,35 +67,109 @@ func (p ImageParams) getImageType() bimg.ImageType {
 	return bimg.UNKNOWN
 }
 
-func (p ImageParams) getWidth() int {
-	var width float64
-	if p.Width.IsPercentage {
-		percents := float64(p.Width.Value) / 100
-		width = float64(p.Image.Metadata.Size.Width) * percents
-	} else {
-		width = float64(p.Width.Value)
+func (p ImageParams) getFillResizedDimensions() (w, h float64) {
+	if p.Fill == FillContain {
+		if p.Width.Value != 0 {
+			ratio := float64(p.Width.Value) / float64(p.Image.Metadata.Size.Width)
+			scaledWidth := float64(p.Image.Metadata.Size.Width) * ratio
+			scaledHeight := float64(p.Image.Metadata.Size.Height) * ratio
+
+			if p.Height.Value == 0 || scaledHeight <= float64(p.Image.Metadata.Size.Height) {
+				w = scaledWidth
+				h = scaledHeight
+				return
+			}
+		}
+
+		ratio := float64(p.Height.Value) / float64(p.Image.Metadata.Size.Height)
+		scaledWidth := float64(p.Image.Metadata.Size.Width) * ratio
+		scaledHeight := float64(p.Image.Metadata.Size.Height) * ratio
+
+		w = scaledWidth
+		h = scaledHeight
+		return
+	} else if p.Fill == FillCover {
+		if p.Width.Value == 0 || p.Height.Value == 0 {
+			w = float64(p.Width.Value)
+			h = float64(p.Height.Value)
+			return
+		}
+
+		widthCoef := float64(p.Width.Value) / float64(p.Image.Metadata.Size.Width)
+		heightCoef := float64(p.Height.Value) / float64(p.Image.Metadata.Size.Height)
+		maxCoef := math.Max(widthCoef, heightCoef)
+
+		resizedWidth := math.Ceil(maxCoef * float64(p.Image.Metadata.Size.Width))
+		resizedHeight := math.Ceil(maxCoef * float64(p.Image.Metadata.Size.Height))
+
+		w = resizedWidth
+		h = resizedHeight
+		return
 	}
 
-	return int(width * p.PixelDensity)
+	//no fill
+	w = float64(p.Image.Metadata.Size.Width)
+	h = float64(p.Image.Metadata.Size.Height)
+	return
 }
 
-func (p ImageParams) getHeight() int {
-	var height float64
-	if p.Height.IsPercentage {
-		percents := float64(p.Height.Value) / 100
-		height = float64(p.Image.Metadata.Size.Height) * percents
-	} else {
-		height = float64(p.Height.Value)
+func (p ImageParams) getResizedDimensions() (w, h int) {
+	width, height := p.getFillResizedDimensions()
+	log.Println(width)
+
+	if *p.Upscale == false && p.Fill == FillNone { //apply upscale restriction only if we have no fill option
+		if p.Width.Value > p.Image.Metadata.Size.Width {
+			width = float64(p.Image.Metadata.Size.Width)
+		}
+
+		if p.Height.Value > p.Image.Metadata.Size.Height {
+			height = float64(p.Image.Metadata.Size.Height)
+		}
 	}
 
-	return int(height * p.PixelDensity)
+	if p.Width.Value != 0 {
+		if p.Width.IsPercentage {
+			percents := float64(p.Width.Value) / 100
+			width = float64(width) * percents
+		} else {
+			width = float64(p.Width.Value)
+		}
+
+		if p.Height.Value == 0 {
+			coefficient := width / float64(p.Image.Metadata.Size.Width)
+			height = float64(p.Image.Metadata.Size.Height) * coefficient
+		}
+	}
+	width *= p.PixelDensity
+
+	if p.Height.Value != 0 {
+		if p.Height.IsPercentage {
+			percents := float64(p.Height.Value) / 100
+			height = float64(height) * percents
+		} else {
+			height = float64(p.Height.Value)
+		}
+
+		if p.Width.Value == 0 {
+			coefficient := height / float64(p.Image.Metadata.Size.Height)
+			width = float64(p.Image.Metadata.Size.Width) * coefficient
+		}
+	}
+	height *= p.PixelDensity
+
+	w = int(width)
+	h = int(height)
+	return
 }
 
 func (p ImageParams) toBimgOptions() bimg.Options {
+	width, height := p.getResizedDimensions()
+
 	return bimg.Options{
-		Width:  p.getWidth(),
-		Height: p.getHeight(),
+		Width:  width,
+		Height: height,
 		Type:   p.getImageType(),
+		Crop:   p.Fill == FillCover,
 	}
 }
 
@@ -113,34 +200,44 @@ func parseParams(params []string, img Image) (ImageParams, error) {
 		key := options[0]
 		value := options[1]
 		//TODO: validations
-		if key == "w" {
+		switch key {
+		case "w":
 			w, err := parseImageDimension(value, "width")
 			if err != nil {
 				return *p, err
 			}
 
 			p.Width = w
-		} else if key == "h" {
+		case "h":
 			h, err := parseImageDimension(value, "height")
 			if err != nil {
 				return *p, err
 			}
 
 			p.Height = h
-		} else if key == "pd" {
+		case "pd":
 			pd, err := strconv.ParseFloat(value, 64)
 			if err != nil {
 				return *p, errors.New(fmt.Sprintf("Invalid pixel density value: %s", value))
 			}
 
 			p.PixelDensity = pd
-		} else if key == "upscale" {
+		case "upscale":
 			upscale, err := strconv.ParseBool(value)
 			if err != nil {
 				return *p, errors.New(fmt.Sprintf("Invalid upscale value: %s", value))
 			}
 
 			p.Upscale = &upscale
+		case "fill":
+			t := FillType(value)
+			if t == FillContain {
+				p.Fill = FillContain
+			} else if t == FillCover {
+				p.Fill = FillCover
+			} else {
+				return *p, errors.New(fmt.Sprintf("Invalid fill value: %s", value))
+			}
 		}
 	}
 
@@ -148,11 +245,10 @@ func parseParams(params []string, img Image) (ImageParams, error) {
 	//TODO: metadata retention?
 	//TODO: allow specifying type to convert to in params
 
-	//TODO: error if not width/height?
-
-	if p.Width.Value == 0 && p.Height.Value == 0 {
-		return *p, errors.New("Invalid width and height parameters, specify at least one")
-	}
+	//TODO: error if not width/height? it seems not, investigate how the java server behaves
+	//if p.Width.Value == 0 && p.Height.Value == 0 {
+	//	return *p, errors.New("Invalid width and height parameters, specify at least one")
+	//}
 
 	if p.PixelDensity == 0 {
 		p.PixelDensity = 1
@@ -160,16 +256,6 @@ func parseParams(params []string, img Image) (ImageParams, error) {
 
 	if p.Upscale == nil {
 		p.Upscale = new(bool) //pointer of false
-	}
-
-	if *p.Upscale == false {
-		if p.Width.Value > p.Image.Metadata.Size.Width {
-			p.Width = ImageDimension{p.Image.Metadata.Size.Width, false}
-		}
-
-		if p.Height.Value > p.Image.Metadata.Size.Height {
-			p.Height = ImageDimension{p.Image.Metadata.Size.Height, false}
-		}
 	}
 
 	return *p, nil
@@ -189,7 +275,14 @@ func parseBatchOperationParams(rawOperationParams string, img Image) (BatchOpera
 	return *bp, nil
 }
 
-func validateParams(p ImageParams, img Image) error {
-	//TODO:
+func validateParams(p ImageParams) error {
+	if p.Width.IsPercentage && p.Fill != FillNone {
+		return errors.New(fmt.Sprintf("Cannot use percentage width: %d with fill: %s", p.Width.Value, p.Fill))
+	}
+
+	if p.Height.IsPercentage && p.Fill != FillNone {
+		return errors.New(fmt.Sprintf("Cannot use percentage height: %d with fill: %s", p.Height.Value, p.Fill))
+	}
+
 	return nil
 }

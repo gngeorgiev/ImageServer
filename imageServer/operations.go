@@ -5,7 +5,8 @@ import "gopkg.in/h2non/bimg.v1"
 func resize(buffer []byte, params ImageParams) (Image, error) {
 	//todo: validate etc
 
-	b, err := bimg.Resize(buffer, params.toBimgOptions())
+	opts := params.toBimgOptions()
+	b, err := bimg.Resize(buffer, opts)
 	if err != nil {
 		return Image{}, err
 	}

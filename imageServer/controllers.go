@@ -36,7 +36,7 @@ func (r *resizeController) resize() gin.HandlerFunc {
 			return
 		}
 
-		validationError := validateParams(p, image)
+		validationError := validateParams(p)
 		if validationError != nil {
 			handleError(c, validationError)
 			return
