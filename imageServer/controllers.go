@@ -1,13 +1,13 @@
 package imageServer
 
 import (
-	"net/http"
-
 	"archive/zip"
 	"bytes"
-	"log"
+	"net/http"
+
 	"strings"
-	"sync"
+
+	"log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -42,13 +42,16 @@ func (r *resizeController) resize() gin.HandlerFunc {
 			return
 		}
 
-		img, err := resize(image.Contents, p)
-		if err != nil {
-			handleError(c, err)
+		ch := make(chan ResizeResult)
+		go resize(image.Contents, p, ch)
+		result := <-ch
+
+		if result.Error != nil {
+			handleError(c, result.Error)
 			return
 		}
 
-		c.Data(http.StatusOK, img.GetMimeType(), img.Contents)
+		c.Data(http.StatusOK, result.Image.GetMimeType(), result.Image.Contents)
 	}
 }
 
@@ -67,47 +70,43 @@ func (r *batchController) batch() gin.HandlerFunc {
 			return
 		}
 
-		wg := sync.WaitGroup{}
-
-		mu := &sync.Mutex{}
-
 		buf := new(bytes.Buffer)
 		w := zip.NewWriter(buf)
 		defer w.Close()
 
 		errors := make([]error, 0)
+		resultChannels := make([]chan ResizeResult, 0)
 		for _, operation := range batchParams.Operations {
-			wg.Add(1)
-			go func(operation BatchOperation) {
-				defer wg.Done()
+			ch := make(chan ResizeResult)
+			resultChannels = append(resultChannels, ch)
+			bp, err := parseBatchOperationParams(operation.RawOperationParams, image)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
 
-				bp, err := parseBatchOperationParams(operation.RawOperationParams, image)
-				if err != nil {
-					errors = append(errors, err)
-					return
-				}
-
-				img, err := resize(image.Contents, bp.ImageParams)
-				if err != nil {
-					errors = append(errors, err)
-					return
-				}
-
-				mu.Lock()
-				defer mu.Unlock()
-				f, err := w.Create(operation.Filename)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				_, err = f.Write(img.Contents)
-				if err != nil {
-					log.Fatal(err)
-				}
-			}(operation)
+			go resize(image.Contents, bp.ImageParams, ch)
 		}
 
-		wg.Wait()
+		for i, ch := range resultChannels {
+			res := <-ch
+
+			if res.Error != nil {
+				errors = append(errors, res.Error)
+				continue
+			}
+
+			operation := batchParams.Operations[i]
+			f, err := w.Create(operation.Filename)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			_, err = f.Write(res.Image.Contents)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 
 		if len(errors) > 0 {
 			handleErrors(c, errors)

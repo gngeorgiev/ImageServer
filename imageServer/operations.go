@@ -2,14 +2,30 @@ package imageServer
 
 import "gopkg.in/h2non/bimg.v1"
 
-func resize(buffer []byte, params ImageParams) (Image, error) {
-	//todo: validate etc
+type ResizeResult struct {
+	Image Image
+	Error error
+}
 
-	opts := params.toBimgOptions()
-	b, err := bimg.Resize(buffer, opts)
-	if err != nil {
-		return Image{}, err
+func resize(buffer []byte, params ImageParams, doneChan chan ResizeResult) {
+	select {
+	case workerId := <-workers:
+		res := &ResizeResult{}
+
+		opts := params.toBimgOptions()
+		b, err := bimg.Resize(buffer, opts)
+		if err != nil {
+			res.Error = err
+		}
+
+		newImg, err := NewImage(b)
+		if err != nil {
+			res.Error = err
+		}
+
+		res.Image = newImg
+
+		workers <- workerId
+		doneChan <- *res
 	}
-
-	return NewImage(b)
 }

@@ -8,8 +8,6 @@ import (
 
 	"math"
 
-	"log"
-
 	"gopkg.in/h2non/bimg.v1"
 )
 
@@ -115,7 +113,6 @@ func (p ImageParams) getFillResizedDimensions() (w, h float64) {
 
 func (p ImageParams) getResizedDimensions() (w, h int) {
 	width, height := p.getFillResizedDimensions()
-	log.Println(width)
 
 	if *p.Upscale == false && p.Fill == FillNone { //apply upscale restriction only if we have no fill option
 		if p.Width.Value > p.Image.Metadata.Size.Width {
