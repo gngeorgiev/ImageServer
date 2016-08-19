@@ -48,7 +48,7 @@ func (r *resizeController) resize() gin.HandlerFunc {
 			return
 		}
 
-		c.Data(http.StatusOK, img.Mime, img.Contents)
+		c.Data(http.StatusOK, img.GetMimeType(), img.Contents)
 	}
 }
 
@@ -58,7 +58,7 @@ type batchController struct {
 func (r *batchController) batch() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		//apiKey := c.Param("apiKey")
-		var batchParams batchParams
+		var batchParams BatchParams
 		c.BindJSON(&batchParams)
 
 		image, err := downloadImage(batchParams.URL)

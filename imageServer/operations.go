@@ -1,24 +1,14 @@
 package imageServer
 
-import (
-	"fmt"
+import "gopkg.in/h2non/bimg.v1"
 
-	"gopkg.in/h2non/bimg.v1"
-)
-
-func resize(buffer []byte, params imageParams) (image, error) {
+func resize(buffer []byte, params ImageParams) (Image, error) {
 	//todo: validate etc
-
-	img := &image{}
 
 	b, err := bimg.Resize(buffer, params.toBimgOptions())
 	if err != nil {
-		return *img, err
+		return Image{}, err
 	}
 
-	t := bimg.DetermineImageTypeName(b)
-	img.Contents = b
-	img.Mime = fmt.Sprintf("image/%s", t)
-
-	return *img, nil
+	return NewImage(b)
 }

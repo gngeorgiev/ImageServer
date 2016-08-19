@@ -9,14 +9,19 @@ import (
 	"gopkg.in/h2non/bimg.v1"
 )
 
-type imageParams struct {
-	Width, Height int
+type ImageParams struct {
+	Width, Height ImageDimension
+	Image         Image
 	PixelDensity  float64
 	Upscale       *bool //using a pointer here allows us to check for nil
-	Mime          string
 }
 
-type batchParams struct {
+type ImageDimension struct {
+	Value        int
+	IsPercentage bool
+}
+
+type BatchParams struct {
 	URL        string           `json:"url"`
 	Operations []BatchOperation `json:"operations"`
 }
@@ -28,34 +33,52 @@ type BatchOperation struct {
 
 type BatchOperationParams struct {
 	Operation   string
-	ImageParams imageParams
+	ImageParams ImageParams
 }
 
-func (p imageParams) getImageType() bimg.ImageType {
-	if p.Mime == "image/jpeg" || p.Mime == "image/jpg" {
+func (p ImageParams) getImageType() bimg.ImageType {
+	m := p.Image.GetMimeType()
+
+	if m == "image/jpeg" || m == "image/jpg" {
 		return bimg.JPEG
-	} else if p.Mime == "image/png" {
+	} else if m == "image/png" {
 		return bimg.PNG
-	} else if p.Mime == "image/webp" {
+	} else if m == "image/webp" {
 		return bimg.WEBP
-	} else if p.Mime == "image/tiff" {
+	} else if m == "image/tiff" {
 		return bimg.TIFF
-	} else if p.Mime == "image/magick" {
+	} else if m == "image/magick" {
 		return bimg.MAGICK
 	}
 
 	return bimg.UNKNOWN
 }
 
-func (p imageParams) getWidth() int {
-	return int(float64(p.Width) * p.PixelDensity)
+func (p ImageParams) getWidth() int {
+	var width float64
+	if p.Width.IsPercentage {
+		percents := float64(p.Width.Value) / 100
+		width = float64(p.Image.Metadata.Size.Width) * percents
+	} else {
+		width = float64(p.Width.Value)
+	}
+
+	return int(width * p.PixelDensity)
 }
 
-func (p imageParams) getHeight() int {
-	return int(float64(p.Height) * p.PixelDensity)
+func (p ImageParams) getHeight() int {
+	var height float64
+	if p.Height.IsPercentage {
+		percents := float64(p.Height.Value) / 100
+		height = float64(p.Image.Metadata.Size.Height) * percents
+	} else {
+		height = float64(p.Height.Value)
+	}
+
+	return int(height * p.PixelDensity)
 }
 
-func (p imageParams) toBimgOptions() bimg.Options {
+func (p ImageParams) toBimgOptions() bimg.Options {
 	return bimg.Options{
 		Width:  p.getWidth(),
 		Height: p.getHeight(),
@@ -63,25 +86,44 @@ func (p imageParams) toBimgOptions() bimg.Options {
 	}
 }
 
+func parseImageDimension(value, paramName string) (ImageDimension, error) {
+	var isPercentage bool
+	var valueToParse string
+
+	if strings.Contains(value, "pct") {
+		isPercentage = true
+		valueToParse = strings.Replace(value, "pct", "", 1)
+	} else {
+		valueToParse = value
+	}
+
+	parsedValue, err := strconv.Atoi(valueToParse)
+	if err != nil {
+		return ImageDimension{}, errors.New(fmt.Sprintf("Invalid %s value: %s", paramName, value))
+	}
+
+	return ImageDimension{parsedValue, isPercentage}, nil
+}
+
 //Modded to reuse in batch operation parsing
-func parseParams(params []string, img image) (imageParams, error) {
-	p := &imageParams{}
+func parseParams(params []string, img Image) (ImageParams, error) {
+	p := &ImageParams{Image: img}
 	for _, s := range params {
 		options := strings.Split(s, ":")
 		key := options[0]
 		value := options[1]
 		//TODO: validations
 		if key == "w" {
-			w, err := strconv.Atoi(value)
+			w, err := parseImageDimension(value, "width")
 			if err != nil {
-				return *p, errors.New(fmt.Sprintf("Invalid width value: %s", value)) //TODO: percentages
+				return *p, err
 			}
 
 			p.Width = w
 		} else if key == "h" {
-			h, err := strconv.Atoi(value)
+			h, err := parseImageDimension(value, "height")
 			if err != nil {
-				return *p, errors.New(fmt.Sprintf("Invalid height value: %s", value))
+				return *p, err
 			}
 
 			p.Height = h
@@ -103,12 +145,13 @@ func parseParams(params []string, img image) (imageParams, error) {
 	}
 
 	//TODO: I hardly think the png compression param is needed
-	//TODO: metadata retention
+	//TODO: metadata retention?
+	//TODO: allow specifying type to convert to in params
 
 	//TODO: error if not width/height?
 
-	if p.Mime == "" { //TODO: allow specifying type in params
-		p.Mime = img.Mime
+	if p.Width.Value == 0 && p.Height.Value == 0 {
+		return *p, errors.New("Invalid width and height parameters, specify at least one")
 	}
 
 	if p.PixelDensity == 0 {
@@ -120,25 +163,19 @@ func parseParams(params []string, img image) (imageParams, error) {
 	}
 
 	if *p.Upscale == false {
-		//TODO: reuse size and/or meta?
-		s, err := bimg.Size(img.Contents)
-		if err != nil {
-			return *p, err
+		if p.Width.Value > p.Image.Metadata.Size.Width {
+			p.Width = ImageDimension{p.Image.Metadata.Size.Width, false}
 		}
 
-		if p.Width > s.Width {
-			p.Width = s.Width
-		}
-
-		if p.Height > s.Height {
-			p.Height = s.Height
+		if p.Height.Value > p.Image.Metadata.Size.Height {
+			p.Height = ImageDimension{p.Image.Metadata.Size.Height, false}
 		}
 	}
 
 	return *p, nil
 }
 
-func parseBatchOperationParams(rawOperationParams string, img image) (BatchOperationParams, error) {
+func parseBatchOperationParams(rawOperationParams string, img Image) (BatchOperationParams, error) {
 	bp := &BatchOperationParams{}
 
 	splitQuery := strings.Split(rawOperationParams, "=")
@@ -152,7 +189,7 @@ func parseBatchOperationParams(rawOperationParams string, img image) (BatchOpera
 	return *bp, nil
 }
 
-func validateParams(p imageParams, img image) error {
+func validateParams(p ImageParams, img Image) error {
 	//TODO:
 	return nil
 }
