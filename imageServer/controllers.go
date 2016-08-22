@@ -71,10 +71,6 @@ func (r *batchController) batch() gin.HandlerFunc {
 			return
 		}
 
-		buf := new(bytes.Buffer)
-		w := zip.NewWriter(buf)
-		defer w.Close()
-
 		errors := make([]error, 0)
 		resultChannels := make([]chan ResizeResult, 0)
 		for _, operation := range batchParams.Operations {
@@ -90,6 +86,8 @@ func (r *batchController) batch() gin.HandlerFunc {
 			go resize(image.Contents, bp.ImageParams, ch)
 		}
 
+		buf := new(bytes.Buffer)
+		w := zip.NewWriter(buf)
 		for i, ch := range resultChannels {
 			res := <-ch
 
@@ -99,7 +97,7 @@ func (r *batchController) batch() gin.HandlerFunc {
 			}
 
 			operation := batchParams.Operations[i]
-			f, err := w.Create(operation.Filename) //TODO: operation and channel might not be from the same index!! bug!
+			f, err := w.Create(operation.Filename)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -115,6 +113,7 @@ func (r *batchController) batch() gin.HandlerFunc {
 			return
 		}
 
+		w.Close()
 		c.Data(http.StatusOK, "application/zip", buf.Bytes())
 	}
 }
